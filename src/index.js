@@ -7,7 +7,7 @@ const authRoutes = require('./routes/auth');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Logger
+// Logger (console-only for Vercel)
 const logger = winston.createLogger({
     level: 'info',
     format: winston.format.combine(
@@ -15,18 +15,13 @@ const logger = winston.createLogger({
         winston.format.json()
     ),
     transports: [
-        new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
-        new winston.transports.File({ filename: 'logs/combined.log' })
+        new winston.transports.Console() // Log to console only
     ]
 });
-if (process.env.NODE_ENV !== 'production') {
-    logger.add(new winston.transports.Console());
-}
 
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use('/logs', express.static('logs')); // Access logs via /logs
 app.use('/', authRoutes);
 
 // Error handling middleware
