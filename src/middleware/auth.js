@@ -5,7 +5,7 @@ const { ExtractJwt } = require('passport-jwt');
 
 // In-memory "DB" (replace with MongoDB/PostgreSQL for prod-like staging)
 const users = {
-    'username': { password: 'password' } // Use bcrypt in prod
+    'username': { password: 'password' }
 };
 const clients = {
     'client_id': { secret: 'client_secret' }
@@ -17,7 +17,7 @@ const apiKeys = {
 // Basic Auth for /basic-auth and /oauth2/token
 passport.use(new BasicStrategy((username, password, done) => {
     const user = users[username] || clients[username];
-    if (user && user.password === password || user.secret === password) {
+    if (user && (user.password === password || user.secret === password)) {
         return done(null, { username });
     }
     return done(null, false);

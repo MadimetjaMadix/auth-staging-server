@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AuthProperties Logs Dashboard</title>
+    <style>
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background-color: #f5f7fa;
+        margin: 0;
+        padding: 20px;
+        color: #333;
+      }
+      .header {
+        text-align: center;
+        margin-bottom: 30px;
+      }
+      .header h1 {
+        color: #2c3e50;
+        margin-bottom: 10px;
+      }
+      .controls {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .filter-group {
+        display: flex;
+        gap: 10px;
+      }
+      input,
+      select,
+      button {
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+      }
+      button {
+        background-color: #3498db;
+        color: white;
+        border: none;
+        cursor: pointer;
+        transition: background-color 0.3s;
+      }
+      button:hover {
+        background-color: #2980b9;
+      }
+      .refresh-btn {
+        background-color: #27ae60;
+      }
+      .refresh-btn:hover {
+        background-color: #229954;
+      }
+      .clear-btn {
+        background-color: #e74c3c;
+      }
+      .clear-btn:hover {
+        background-color: #c0392b;
+      }
+      .logs-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .logs-table th,
+      .logs-table td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #eee;
+      }
+      .logs-table th {
+        background-color: #34495e;
+        color: white;
+        font-weight: 600;
+      }
+      .logs-table tr:hover {
+        background-color: #f8f9fa;
+      }
+      .status-200 {
+        color: #27ae60;
+        font-weight: bold;
+      }
+      .status-401,
+      .status-400,
+      .status-500 {
+        color: #e74c3c;
+        font-weight: bold;
+      }
+      .status-405 {
+        color: #f39c12;
+        font-weight: bold;
+      }
+      .details-btn {
+        background: none;
+        border: none;
+        color: #3498db;
+        cursor: pointer;
+        text-decoration: underline;
+        font-size: 14px;
+      }
+      .details-btn:hover {
+        color: #2980b9;
+      }
+      .details-content {
+        display: none;
+        background: #f8f9fa;
+        padding: 10px;
+        margin-top: 10px;
+        border-radius: 4px;
+        font-size: 12px;
+      }
+      .details-content pre {
+        white-space: pre-wrap;
+        background: #ecf0f1;
+        padding: 8px;
+        border-radius: 4px;
+        overflow-x: auto;
+      }
+      .pagination {
+        display: flex;
+        justify-content: center;
+        margin-top: 20px;
+        gap: 10px;
+      }
+      .page-btn {
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        background: white;
+        cursor: pointer;
+        border-radius: 4px;
+      }
+      .page-btn.active {
+        background: #3498db;
+        color: white;
+      }
+      .no-logs {
+        text-align: center;
+        padding: 40px;
+        color: #7f8c8d;
+      }
+      .message {
+        text-align: center;
+        padding: 10px;
+        margin-bottom: 20px;
+        border-radius: 4px;
+        display: none;
+      }
+      .message.success {
+        background: #dff0d8;
+        color: #3c763d;
+      }
+      .message.error {
+        background: #f2dede;
+        color: #a94442;
+      }
+      @media (max-width: 768px) {
+        .controls {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .filter-group {
+          flex-direction: column;
+        }
+        .logs-table {
+          font-size: 12px;
+        }
+        .logs-table th,
+        .logs-table td {
+          padding: 8px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <h1>AuthProperties Logs Dashboard</h1>
+      <p>
+        Real-time logs from staging server endpoints (filtered to defined
+        endpoints, sorted by timestamp descending).
+      </p>
+    </div>
+
+    <div id="message" class="message"></div>
+
+    <div class="controls">
+      <div class="filter-group">
+        <input
+          type="text"
+          id="urlFilter"
+          placeholder="Filter by URL (e.g., /basic-auth)"
+          oninput="applyFilters()"
+        />
+        <select id="statusFilter" onchange="applyFilters()">
+          <option value="">All Status Codes</option>
+          <option value="200">200 OK</option>
+          <option value="401">401 Unauthorized</option>
+          <option value="400">400 Bad Request</option>
+          <option value="500">500 Server Error</option>
+        </select>
+        <input
+          type="number"
+          id="durationFilter"
+          placeholder="Max Duration (ms)"
+          oninput="applyFilters()"
+        />
+      </div>
+      <div>
+        <button onclick="fetchLogs()" class="refresh-btn">Refresh Logs</button>
+        <button onclick="clearLogs()" class="clear-btn">Clear Logs</button>
+      </div>
+    </div>
+
+    <table class="logs-table" id="logsTable">
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Method</th>
+          <th>URL</th>
+          <th>Status</th>
+          <th>Duration</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody id="logsBody">
+        <tr>
+          <td colspan="6" class="no-logs">Loading configuration...</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="pagination" id="pagination"></div>
+
+    <script>
+      let BASE_URL = "https://auth-staging-server.vercel.app"; // Fallback URL
+      const API_KEY = "mock-api-key"; // Replace with your API key for testing
+      let allLogs = [];
+      let currentPage = 1;
+      const logsPerPage = 10;
+
+      // Show message (success or error)
+      function showMessage(text, type) {
+        const messageDiv = document.getElementById("message");
+        messageDiv.textContent = text;
+        messageDiv.className = `message ${type}`;
+        messageDiv.style.display = "block";
+        setTimeout(() => {
+          messageDiv.style.display = "none";
+        }, 5000);
+      }
+
+      // Fetch BASE_URL from /config
+      function fetchConfig() {
+        return fetch("/config")
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.status === "success" && data.baseUrl) {
+              BASE_URL = data.baseUrl;
+            } else {
+              console.warn("Using fallback BASE_URL:", BASE_URL);
+            }
+          })
+          .catch((error) => {
+            console.error("Error fetching config:", error);
+            console.warn("Using fallback BASE_URL:", BASE_URL);
+          });
+      }
+
+      // Fetch logs from /logs-data
+      function fetchLogs() {
+        fetch(`${BASE_URL}/logs-data`)
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.status === "success") {
+              allLogs = data.logs || [];
+              renderTable();
+            } else {
+              console.error("Error fetching logs:", data.message);
+              document.getElementById(
+                "logsBody"
+              ).innerHTML = `<tr><td colspan="6" class="no-logs">Error: ${data.message}</td></tr>`;
+            }
+          })
+          .catch((error) => {
+            console.error("Fetch error:", error);
+            document.getElementById(
+              "logsBody"
+            ).innerHTML = `<tr><td colspan="6" class="no-logs">Failed to fetch logs. Check console.</td></tr>`;
+          });
+      }
+
+      // Clear logs via /clear-logs
+      function clearLogs() {
+        fetch(`${BASE_URL}/clear-logs`, {
+          method: "POST",
+          headers: {
+            "X-API-KEY": API_KEY,
+            "Content-Type": "application/json",
+          },
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.status === "success") {
+              showMessage("Logs cleared successfully", "success");
+              allLogs = [];
+              renderTable();
+            } else {
+              showMessage(`Failed to clear logs: ${data.message}`, "error");
+            }
+          })
+          .catch((error) => {
+            console.error("Error clearing logs:", error);
+            showMessage("Failed to clear logs. Check console.", "error");
+          });
+      }
+
+      function renderTable() {
+        const filteredLogs = applyFilters(allLogs);
+        const totalPages = Math.ceil(filteredLogs.length / logsPerPage);
+        const start = (currentPage - 1) * logsPerPage;
+        const end = start + logsPerPage;
+        const pageLogs = filteredLogs.slice(start, end);
+
+        let tbody = "";
+        if (pageLogs.length === 0) {
+          tbody =
+            '<tr><td colspan="6" class="no-logs">No logs match the filters.</td></tr>';
+        } else {
+          pageLogs.forEach((log) => {
+            const statusClass = `status-${log.statusCode}`;
+            tbody += `
+                        <tr>
+                            <td>${new Date(log.timestamp).toLocaleString()}</td>
+                            <td>${log.method}</td>
+                            <td>${log.url}</td>
+                            <td class="${statusClass}">${log.statusCode}</td>
+                            <td>${log.duration}</td>
+                            <td>
+                                <button class="details-btn" onclick="toggleDetails(this)">Details</button>
+                                <div class="details-content">
+                                    <strong>Headers:</strong><pre>${JSON.stringify(
+                                      log.headers,
+                                      null,
+                                      2
+                                    )}</pre>
+                                    <strong>Body:</strong><pre>${JSON.stringify(
+                                      log.body,
+                                      null,
+                                      2
+                                    )}</pre>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+          });
+        }
+        document.getElementById("logsBody").innerHTML = tbody;
+        renderPagination(totalPages);
+      }
+
+      function toggleDetails(btn) {
+        const content = btn.nextElementSibling;
+        content.style.display =
+          content.style.display === "block" ? "none" : "block";
+      }
+
+      function applyFilters(logs) {
+        const urlFilter = document
+          .getElementById("urlFilter")
+          .value.toLowerCase();
+        const statusFilter = document.getElementById("statusFilter").value;
+        const durationFilter =
+          parseInt(document.getElementById("durationFilter").value) || Infinity;
+
+        return logs
+          .filter((log) => {
+            return (
+              (!urlFilter || log.url.toLowerCase().includes(urlFilter)) &&
+              (!statusFilter || log.statusCode.toString() === statusFilter) &&
+              parseInt(log.duration) <= durationFilter
+            );
+          })
+          .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      }
+
+      function renderPagination(totalPages) {
+        let pagination = "";
+        if (totalPages > 1) {
+          for (let i = 1; i <= totalPages; i++) {
+            const activeClass = i === currentPage ? "active" : "";
+            pagination += `<button class="page-btn ${activeClass}" onclick="changePage(${i})">${i}</button>`;
+          }
+        }
+        document.getElementById("pagination").innerHTML = pagination;
+      }
+
+      function changePage(page) {
+        currentPage = page;
+        renderTable();
+      }
+
+      // Initialize: Fetch config, then logs
+      fetchConfig().then(() => {
+        fetchLogs();
+        setInterval(fetchLogs, 30000);
+      });
+    </script>
+  </body>
+</html>
