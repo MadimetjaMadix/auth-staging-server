@@ -1,7 +1,6 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const winston = require('winston');
 const fs = require('fs').promises;
 const path = require('path');
 const authRoutes = require('./routes/auth');
@@ -9,6 +8,8 @@ const { apiKeyMiddleware } = require('./middleware/auth');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+let logs = [];
 
 // Defined endpoints to log (exclude /logs, /logs-data, /config, /clear-logs)
 const validEndpoints = [
@@ -18,20 +19,6 @@ const validEndpoints = [
     '/api-key-auth',
     '/no-auth'
 ];
-
-// Logger (write to /tmp for Vercel)
-const logger = winston.createLogger({
-    level: 'info',
-    format: winston.format.combine(
-        winston.format.timestamp(),
-        winston.format.json()
-    ),
-    transports: [
-        new winston.transports.Console(),
-        new winston.transports.File({ filename: '/tmp/error.log', level: 'error' }),
-        new winston.transports.File({ filename: '/tmp/combined.log' })
-    ]
-});
 
 // Middleware to log only defined endpoint attempts
 app.use((req, res, next) => {
@@ -45,6 +32,7 @@ app.use((req, res, next) => {
         if (logBody.grant_type) logBody.grant_type = '[REDACTED]';
         if (logBody.password) logBody.password = '[REDACTED]';
         if (logBody.client_secret) logBody.client_secret = '[REDACTED]';
+        const logTimestamp = new Date().toISOString();
         const logEntry = {
             timestamp: new Date().toISOString(),
             method: req.method,
@@ -58,11 +46,14 @@ app.use((req, res, next) => {
             body: logBody,
             duration: `${duration}ms`
         };
-        if (res.statusCode >= 400) {
-            logger.error('Endpoint attempt failed', logEntry);
-        } else {
-            logger.info('Endpoint attempt', logEntry);
-        }
+        const logData = {
+            timestamp: logTimestamp,
+            level: res.statusCode >= 400 ? 'error' : 'info',
+            message: res.statusCode >= 400 ? 'Endpoint attempt failed' : 'Endpoint attempt',
+            ...logEntry
+        };
+        logs.push(logData);
+        console.log(JSON.stringify(logData));
     });
     next();
 });
@@ -96,39 +87,19 @@ app.get('/logs', async (req, res) => {
 });
 
 // /logs-data endpoint (GET, serves JSON logs)
-app.get('/logs-data', async (req, res) => {
+app.get('/logs-data', (req, res) => {
     try {
-        const logFile = '/tmp/combined.log';
-        let logs = [];
-        try {
-            const data = await fs.readFile(logFile, 'utf8');
-            logs = data
-                .split('\n')
-                .filter(line => line.trim())
-                .map(line => {
-                    try {
-                        return JSON.parse(line);
-                    } catch {
-                        return null;
-                    }
-                })
-                .filter(log => log && log.timestamp && log.method && log.url && validEndpoints.includes(log.url))
-                .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-        } catch (err) {
-            if (err.code === 'ENOENT') {
-                logs = [];
-            } else {
-                throw err;
-            }
-        }
+        const filteredLogs = logs
+            .filter(log => log.timestamp && log.method && log.url && validEndpoints.includes(log.url))
+            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
         res.json({
             status: 'success',
-            logs,
+            logs: filteredLogs,
             message: 'Logs retrieved successfully',
             timestamp: new Date().toISOString()
         });
     } catch (err) {
-        console.error('Error reading logs:', err.message);
+        console.error('Error retrieving logs:', err.message);
         res.status(500).json({
             status: 'error',
             message: 'Failed to retrieve logs',
@@ -138,18 +109,9 @@ app.get('/logs-data', async (req, res) => {
 });
 
 // /clear-logs endpoint (POST, requires API key)
-app.post('/clear-logs', apiKeyMiddleware, async (req, res) => {
+app.post('/clear-logs', apiKeyMiddleware, (req, res) => {
     try {
-        const logFiles = ['/tmp/combined.log', '/tmp/error.log'];
-        for (const file of logFiles) {
-            try {
-                await fs.writeFile(file, ''); // Clear file contents instead of deleting
-            } catch (err) {
-                if (err.code !== 'ENOENT') {
-                    throw err;
-                }
-            }
-        }
+        logs = [];
         res.json({
             status: 'success',
             message: 'Logs cleared successfully',
